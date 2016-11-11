@@ -9,11 +9,13 @@ using CoreAudio;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Win32;
+using NLog;
 
 namespace EZBlocker
 {
     public partial class Main : Form
     {
+        private  static readonly Logger logger = LogManager.GetCurrentClassLogger();
         private bool muted = false;
         private bool spotifyMute = false;
         private float volume = 0.9f;
@@ -22,10 +24,7 @@ namespace EZBlocker
         private ToolTip artistTooltip = new ToolTip();
 
         private string nircmdPath = Application.StartupPath + @"\nircmd.exe";
-        private string jsonPath = Application.StartupPath + @"\Newtonsoft.Json.dll";
-        private string coreaudioPath = Application.StartupPath + @"\CoreAudio.dll";
-        public static string logPath = Application.StartupPath + @"\EZBlocker-log.txt";
-
+        
         private string spotifyPath = Environment.GetEnvironmentVariable("APPDATA") + @"\Spotify\spotify.exe";
         private string spotifyPrefsPath = Environment.GetEnvironmentVariable("APPDATA") + @"\Spotify\prefs";
         private string volumeMixerPath = Environment.GetEnvironmentVariable("WINDIR") + @"\System32\SndVol.exe";
@@ -51,20 +50,7 @@ namespace EZBlocker
         private string EZBlockerUA = "EZBlocker " + Assembly.GetExecutingAssembly().GetName().Version.ToString() + " " + System.Environment.OSVersion;
         private const string website = @"https://www.ericzhang.me/projects/spotify-ad-blocker-ezblocker/";
 
-        // Google Analytics stuff
-        private Random rnd;
-        private long starttime, lasttime;
         private string visitorId;
-        private int runs = 1;
-        private const string domainHash = "69214020";
-        private const string source = "EZBlocker";
-        private string medium = Assembly.GetExecutingAssembly().GetName().Version.ToString();
-        private const string sessionNumber = "1";
-        private const string campaignNumber = "1";
-        private string language = Thread.CurrentThread.CurrentCulture.Name;
-        private string screenRes = Screen.PrimaryScreen.Bounds.Width + "x" + Screen.PrimaryScreen.Bounds.Height;
-        private const string trackingId = "UA-42480515-3";
-
         public Main()
         {
             InitializeComponent();
@@ -80,7 +66,7 @@ namespace EZBlocker
                 {
                     if (exitTolerance > 20)
                     {
-                        File.AppendAllText(logPath, "Spotify process not found\r\n");
+                        logger.Fatal("Spotify process not found");
                         Notify("Spotify not found, exiting EZBlocker.");
                         Application.Exit();
                     }
@@ -128,7 +114,7 @@ namespace EZBlocker
                     StatusLabel.Text = "Spotify is not running";
                     artistTooltip.SetToolTip(StatusLabel, "");
                     //Notify("Error connecting to Spotify. Retrying...");
-                    File.AppendAllText(logPath, "Not running.\r\n");
+                    logger.Info("Not running.");
                     MainTimer.Interval = 5000;
                     /*
                     MainTimer.Enabled = false;
@@ -156,7 +142,7 @@ namespace EZBlocker
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                File.AppendAllText(logPath, ex.Message);
+                logger.Error(ex);
             }
         }
        
@@ -286,8 +272,6 @@ namespace EZBlocker
                 try
                 {
                     if (File.Exists(nircmdPath)) File.Delete(nircmdPath);
-                    if (File.Exists(jsonPath)) File.Delete(jsonPath);
-                    if (File.Exists(coreaudioPath)) File.Delete(coreaudioPath);
                     Properties.Settings.Default.Upgrade();
                     Properties.Settings.Default.UpdateSettings = false;
                     Properties.Settings.Default.UserEducated = false;
@@ -339,36 +323,11 @@ namespace EZBlocker
         }
 
         /**
-         * Based off of: http://stackoverflow.com/questions/12851868/how-to-send-request-to-google-analytics-in-non-web-based-app
-         * 
-         * Logs actions using Google Analytics
+         * Logs actions using local logger
          **/
         private void LogAction(string pagename)
         {
-            try
-            {
-                lasttime = DateTime.Now.Ticks;
-                string statsRequest = "http://www.google-analytics.com/__utm.gif" +
-                    "?utmwv=4.6.5" +
-                    "&utmn=" + rnd.Next(100000000, 999999999) +
-                    "&utmcs=-" +
-                    "&utmsr=" + screenRes +
-                    "&utmsc=-" +
-                    "&utmul=" + language +
-                    "&utmje=-" +
-                    "&utmfl=-" +
-                    "&utmdt=" + pagename +
-                    "&utmp=" + pagename +
-                    "&utmac=" + trackingId + // Account number
-                    "&utmcc=" +
-                        "__utma%3D" + domainHash + "." + visitorId + "." + starttime + "." + lasttime + "." + starttime + "." + (runs++) +
-                        "%3B%2B__utmz%3D" + domainHash + "." + lasttime + "." + sessionNumber + "." + campaignNumber + ".utmcsr%3D" + source + "%7Cutmccn%3D(" + medium + ")%7Cutmcmd%3D" + medium + "%7Cutmcct%3D%2Fd31AaOM%3B";
-                using (var client = new WebClient())
-                {
-                    client.DownloadData(statsRequest);
-                }
-            }
-            catch { /*ignore*/ }
+            logger.Trace(pagename);
         }
 
         private void RestoreFromTray()
@@ -571,14 +530,6 @@ namespace EZBlocker
                 {
                     File.WriteAllBytes(nircmdPath, Properties.Resources.nircmd32);
                 }
-                if (!File.Exists(jsonPath))
-                {
-                    File.WriteAllBytes(jsonPath, Properties.Resources.Newtonsoft_Json);
-                }
-                if (!File.Exists(coreaudioPath))
-                {
-                    File.WriteAllBytes(coreaudioPath, Properties.Resources.CoreAudio);
-                }
             } catch (Exception ex)
             {
                 Debug.WriteLine(ex);
@@ -606,17 +557,9 @@ namespace EZBlocker
                 }
             }
 
-            // Google Analytics
-            rnd = new Random(Environment.TickCount);
-            starttime = DateTime.Now.Ticks;
-            if (String.IsNullOrEmpty(Properties.Settings.Default.UID))
-            {
-                Properties.Settings.Default.UID = rnd.Next(100000000, 999999999).ToString(); // Build unique visitorId;
-                Properties.Settings.Default.Save();
-            }
             visitorId = Properties.Settings.Default.UID;
             
-            File.AppendAllText(logPath, "-----------\r\n");
+            logger.Info("-----------");
             bool unsafeHeaders = WebHelperHook.SetAllowUnsafeHeaderParsing20();
             Debug.WriteLine("Unsafe Headers: " + unsafeHeaders);
 
